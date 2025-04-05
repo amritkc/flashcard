@@ -29,14 +29,12 @@
     .btn-secondary { background-color: #8e8e93; border: none; }
     .btn-dark { background-color: #1c1c1e; border: none; }
     .btn-info { background-color: #5ac8fa; border: none; color: #212529; }
-
     input.form-control {
       background-color: #fff;
       border: 1px solid #ced4da;
       color: #212529;
       border-radius: 0.75rem;
     }
-
     .card-subject {
       cursor: pointer;
       transition: background 0.3s ease;
@@ -44,14 +42,12 @@
     .card-subject:hover {
       background-color: #f1f1f1;
     }
-
     .card {
       background-color: #ffffff;
       border: 1px solid #dee2e6;
       border-radius: 1rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-
     .flashcard {
       background-color: #ffffff;
       border: 1px solid #dee2e6;
@@ -150,8 +146,13 @@
         col.className = "col-md-4";
         const card = document.createElement("div");
         card.className = "card p-3 shadow-sm h-100";
-        card.innerHTML = `<h5 class='card-subject text-primary'>${doc.id}</h5>`;
-        card.onclick = () => showSubject(doc.id);
+        card.innerHTML = `
+          <h5 class='card-subject text-primary mb-2' onclick="showSubject('${doc.id}')">${doc.id}</h5>
+          <div class='subject-buttons'>
+            <button class="btn btn-sm btn-warning btn-icon" onclick="editSubject('${doc.id}')"><i class='fas fa-edit'></i> Edit</button>
+            <button class="btn btn-sm btn-danger btn-icon" onclick="deleteSubject('${doc.id}')"><i class='fas fa-trash'></i> Delete</button>
+          </div>
+        `;
         col.appendChild(card);
         container.appendChild(col);
       });
@@ -183,6 +184,23 @@
         col.appendChild(div);
         container.appendChild(col);
       });
+    }
+
+    async function editSubject(subjectName) {
+      const newName = prompt("Enter new name for subject:", subjectName);
+      if (!newName || newName === subjectName) return;
+      const subjectRef = db.collection("users").doc(currentUser).collection("subjects");
+      const oldDoc = await subjectRef.doc(subjectName).get();
+      const data = oldDoc.data();
+      await subjectRef.doc(newName).set(data);
+      await subjectRef.doc(subjectName).delete();
+      loadSubjects();
+    }
+
+    async function deleteSubject(subjectName) {
+      if (!confirm(`Are you sure you want to delete subject "${subjectName}" and all its flashcards?`)) return;
+      await db.collection("users").doc(currentUser).collection("subjects").doc(subjectName).delete();
+      loadSubjects();
     }
 
     function toggleAnswer(index) {
