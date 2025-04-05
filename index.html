@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flashcards</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #f8f9fa;
+      color: #212529;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    h1, h2 {
+      font-weight: 600;
+      color: #212529;
+    }
+    .btn {
+      border-radius: 0.75rem;
+      font-weight: 500;
+    }
+    .btn-primary { background-color: #007aff; border: none; }
+    .btn-success { background-color: #34c759; border: none; }
+    .btn-warning { background-color: #ffcc00; border: none; color: #212529; }
+    .btn-danger { background-color: #ff3b30; border: none; }
+    .btn-secondary { background-color: #8e8e93; border: none; }
+    .btn-dark { background-color: #1c1c1e; border: none; }
+    .btn-info { background-color: #5ac8fa; border: none; color: #212529; }
+
+    input.form-control {
+      background-color: #fff;
+      border: 1px solid #ced4da;
+      color: #212529;
+      border-radius: 0.75rem;
+    }
+
+    .card-subject {
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    .card-subject:hover {
+      background-color: #f1f1f1;
+    }
+
+    .card {
+      background-color: #ffffff;
+      border: 1px solid #dee2e6;
+      border-radius: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .flashcard {
+      background-color: #ffffff;
+      border: 1px solid #dee2e6;
+      border-radius: 1rem;
+      padding: 15px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      position: relative;
+      height: 100%;
+      transition: all 0.3s ease-in-out;
+    }
+    .flashcard:hover {
+      transform: scale(1.01);
+    }
+    .answer-text {
+      display: none;
+      margin-top: 10px;
+      color: #555;
+    }
+    .btn-icon i {
+      margin-right: 5px;
+    }
+    .subject-buttons button,
+    .flashcard-buttons button {
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body class="container py-4">
+  <div id="main-screen">
+    <h1 class="mb-4">📘 Flashcard Subjects</h1>
+    <div class="input-group mb-4">
+      <input type="text" id="newSubject" class="form-control" placeholder="Add new subject" />
+      <button class="btn btn-primary btn-icon" onclick="addSubject()"><i class="fas fa-plus"></i> Add Subject</button>
+    </div>
+    <div id="subjects" class="row g-4"></div>
+  </div>
+
+  <div id="subject-screen" class="d-none">
+    <button class="btn btn-secondary mb-3" onclick="goBack()"><i class="fas fa-arrow-left"></i> Back</button>
+    <h2 id="subject-title" class="mb-3"></h2>
+    <button class="btn btn-dark mb-3" onclick="toggleAllAnswers()"><i class="fas fa-eye-slash"></i> Toggle All Answers</button>
+    <div id="flashcards-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3 mt-3"></div>
+    <button class="btn btn-success mt-3 btn-icon" onclick="addFlashcardToCurrent()"><i class="fas fa-plus"></i> Add Flashcard</button>
+  </div>
+
+  <script>
+    let db;
+    let currentSubject = null;
+    let allAnswersVisible = false;
+
+    const request = indexedDB.open("FlashcardDB", 1);
+
+    request.onerror = (event) => console.error("DB error:", event);
+
+    request.onupgradeneeded = (event) => {
+      db = event.target.result;
+      const store = db.createObjectStore("subjects", { keyPath: "name" });
+      store.createIndex("name", "name", { unique: true });
+    };
+
+    request.onsuccess = (event) => {
+      db = event.target.result;
+      loadSubjects();
+    };
+
+    function addSubject() {
+      const subjectName = document.getElementById("newSubject").value.trim();
+      if (!subjectName) return;
+
+      const tx = db.transaction(["subjects"], "readwrite");
+      const store = tx.objectStore("subjects");
+      store.add({ name: subjectName, flashcards: [] });
+      tx.oncomplete = () => {
+        document.getElementById("newSubject").value = "";
+        loadSubjects();
+      };
+    }
+
+    function editSubject(name) {
+      const newName = prompt("Edit subject name:", name);
+      if (!newName || newName === name) return;
+
+      const tx = db.transaction("subjects", "readwrite");
+      const store = tx.objectStore("subjects");
+      const getReq = store.get(name);
+
+      getReq.onsuccess = () => {
+        const data = getReq.result;
+        store.delete(name);
+        data.name = newName;
+        store.add(data).onsuccess = loadSubjects;
+      };
+    }
+
+    function deleteSubject(name) {
+      if (confirm("Delete subject and all its flashcards?")) {
+        const tx = db.transaction("subjects", "readwrite");
+        tx.objectStore("subjects").delete(name).onsuccess = loadSubjects;
+      }
+    }
+
+    function loadSubjects() {
+      const subjectsDiv = document.getElementById("subjects");
+      subjectsDiv.innerHTML = "";
+
+      const tx = db.transaction("subjects", "readonly");
+      const store = tx.objectStore("subjects");
+
+      store.openCursor().onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          const subject = cursor.value;
+          const col = document.createElement("div");
+          col.className = "col-md-4";
+
+          const card = document.createElement("div");
+          card.className = "card p-3 shadow-sm h-100";
+
+          card.innerHTML = `<h5 class="card-subject text-primary">${subject.name}</h5>`;
+          card.querySelector(".card-subject").onclick = () => showSubject(subject.name);
+
+          const btnGroup = document.createElement("div");
+          btnGroup.className = "subject-buttons mt-2";
+          btnGroup.innerHTML = `
+            <button class="btn btn-sm btn-warning btn-icon" onclick="editSubject('${subject.name}')"><i class='fas fa-edit'></i> Edit</button>
+            <button class="btn btn-sm btn-danger btn-icon" onclick="deleteSubject('${subject.name}')"><i class='fas fa-trash'></i> Delete</button>
+          `;
+
+          card.appendChild(btnGroup);
+          col.appendChild(card);
+          subjectsDiv.appendChild(col);
+          cursor.continue();
+        }
+      };
+    }
+
+    function showSubject(name) {
+      currentSubject = name;
+      allAnswersVisible = false;
+      document.getElementById("main-screen").classList.add("d-none");
+      document.getElementById("subject-screen").classList.remove("d-none");
+
+      const tx = db.transaction("subjects", "readonly");
+      const store = tx.objectStore("subjects");
+      const req = store.get(name);
+
+      req.onsuccess = () => {
+        const subject = req.result;
+        document.getElementById("subject-title").textContent = subject.name;
+
+        const list = document.getElementById("flashcards-list");
+        list.innerHTML = "";
+        subject.flashcards.forEach((card, index) => {
+          const col = document.createElement("div");
+          col.className = "col";
+
+          const div = document.createElement("div");
+          div.className = "flashcard h-100";
+          div.innerHTML = `
+            <strong>Q:</strong> ${card.question}
+            <div class="answer-text" id="answer-${index}"><strong>A:</strong> ${card.answer}</div>
+            <div class="flashcard-buttons mt-2">
+              <button class="btn btn-sm btn-info btn-icon" onclick="toggleAnswer(${index})"><i class='fas fa-eye'></i> Show Answer</button>
+              <button class="btn btn-sm btn-warning btn-icon" onclick="editFlashcard(${index})"><i class='fas fa-edit'></i> Edit</button>
+              <button class="btn btn-sm btn-danger btn-icon" onclick="deleteFlashcard(${index})"><i class='fas fa-trash'></i> Delete</button>
+            </div>
+          `;
+          col.appendChild(div);
+          list.appendChild(col);
+        });
+      };
+    }
+
+    function toggleAnswer(index) {
+      const el = document.getElementById(`answer-${index}`);
+      el.style.display = (el.style.display === "none" || !el.style.display) ? "block" : "none";
+    }
+
+    function toggleAllAnswers() {
+      const answers = document.querySelectorAll(".answer-text");
+      allAnswersVisible = !allAnswersVisible;
+      answers.forEach(el => {
+        el.style.display = allAnswersVisible ? "block" : "none";
+      });
+    }
+
+    function addFlashcardToCurrent() {
+      const question = prompt("Enter question:");
+      const answer = prompt("Enter answer:");
+      if (!question || !answer) return;
+
+      const tx = db.transaction("subjects", "readwrite");
+      const store = tx.objectStore("subjects");
+      const req = store.get(currentSubject);
+
+      req.onsuccess = () => {
+        const data = req.result;
+        data.flashcards.push({ question, answer });
+        store.put(data).onsuccess = showSubject.bind(null, currentSubject);
+      };
+    }
+
+    function editFlashcard(index) {
+      const tx = db.transaction("subjects", "readwrite");
+      const store = tx.objectStore("subjects");
+      const req = store.get(currentSubject);
+
+      req.onsuccess = () => {
+        const data = req.result;
+        const card = data.flashcards[index];
+        const newQ = prompt("Edit question:", card.question);
+        const newA = prompt("Edit answer:", card.answer);
+        if (newQ && newA) {
+          data.flashcards[index] = { question: newQ, answer: newA };
+          store.put(data).onsuccess = showSubject.bind(null, currentSubject);
+        }
+      };
+    }
+
+    function deleteFlashcard(index) {
+      if (confirm("Delete this flashcard?")) {
+        const tx = db.transaction("subjects", "readwrite");
+        const store = tx.objectStore("subjects");
+        const req = store.get(currentSubject);
+
+        req.onsuccess = () => {
+          const data = req.result;
+          data.flashcards.splice(index, 1);
+          store.put(data).onsuccess = showSubject.bind(null, currentSubject);
+        };
+      }
+    }
+
+    function goBack() {
+      currentSubject = null;
+      document.getElementById("main-screen").classList.remove("d-none");
+      document.getElementById("subject-screen").classList.add("d-none");
+      loadSubjects();
+    }
+  </script>
+</body>
+</html>
